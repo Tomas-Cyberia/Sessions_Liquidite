@@ -1,0 +1,1440 @@
+//@version=6
+// Sessions · Liquidité : le couteau suisse du court terme de Cyberia, sur le forex, l'or, la crypto et les indices.
+// Séances, liquidité, zones H4, structure, VWAP, et la stratégie d'école de la leçon 16 en plans de trade,
+// avec la taille de position et le bilan des plans passés sur le graphique.
+// Les plans suivent les règles du test du parcours (Modules/_generateur/strategie.js, variante A). La zone H4
+// (condition 2) reprend la variante D : un order block ou un FVG H4 encore intact, de moins de 30 jours.
+// La liquidité est celle de l'ICT et du SMC (leçon 14) : les stops supposés au-delà des sommets et des creux,
+// déduits des prix seuls. Ce n'est pas de l'order flow : ni carnet d'ordres, ni volume acheteur ou vendeur, ni delta.
+// Il tient dans la deuxième place du plan gratuit, à côté d'EMA · RSI.
+indicator("Sessions · Liquidité 1.0", shorttitle = "Sessions·Liquidité 1.0", overlay = true, max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500, max_bars_back = 300)
+
+// Version 1.0 : voir le journal des versions dans le README.
+TZ  = "Europe/Paris"
+DAY = 86400000
+
+// ─── Thème ──────────────────────────────────────────────────────────────────
+GA = "Apparence"
+theme  = input.string("Actuel", "Thème", options = ["Actuel", "Cobalt", "Graphite", "Nuit verte"], group = GA, tooltip = "Le même choix que dans EMA · RSI, pour que les deux indicateurs s'accordent.", display = display.none)
+endMode = input.string("Essentiels", "Noms à droite", options = ["Tous", "Essentiels", "Aucun"], group = GA, tooltip = "Les noms des niveaux encore vivants, à droite du graphique. Essentiels : le plan, la cible de liquidité, les hauts et bas d'hier, de la semaine, du mois et des séances. Tous : aussi les sommets égaux, les POC, les ouvertures et les chiffres ronds.", display = display.none)
+isCob  = theme == "Cobalt"
+isGra  = theme == "Graphite"
+isNuit = theme == "Nuit verte"
+
+// La palette des dessins : vert haussier, rouge baissier et stop, ambre pour la liquidité, encre pour les repères.
+// Les séances partagent une teinte : de 14 h à 18 h, Londres et New York se chevauchent
+// et le fond se fonce de lui-même sur la période la plus active (leçon 04).
+C_BULL = isNuit ? #5FB3A1 : #2E9D76
+C_BEAR = isNuit ? #E0705A : #CF4B43
+C_LIQ  = #D9A23D
+C_INK  = isNuit ? #E9E4D8 : #131722
+C_SES  = isCob ? #2453D6 : isGra ? #1C1F26 : isNuit ? #E9E4D8 : #2962FF
+T_SES  = isNuit ? 94 : 95
+T_ZONE = isNuit ? 88 : 90
+
+// ─── Entrées : séances ──────────────────────────────────────────────────────
+GS = "1 · Séances"
+showSes = input.bool(true, "Afficher", group = GS, tooltip = "Heures de Paris, celles de la leçon 04. Chaque séance s'étend de son plus bas à son plus haut. Seulement en intraday.", display = display.none)
+onA = input.bool(true, "Asie",     inline = "sa", group = GS, display = display.none)
+sA  = input.session("0100-1000", "", inline = "sa", group = GS, display = display.none)
+onL = input.bool(true, "Londres",  inline = "sl", group = GS, display = display.none)
+sL  = input.session("0900-1800", "", inline = "sl", group = GS, display = display.none)
+onN = input.bool(true, "New York", inline = "sn", group = GS, display = display.none)
+sN  = input.session("1400-2300", "", inline = "sn", group = GS, display = display.none)
+onO = input.bool(false, "Ouverture", inline = "so", group = GS, display = display.none)
+sO  = input.session("1530-1600", "", inline = "so", group = GS, tooltip = "Le range d'ouverture : la première demi-heure de Wall Street, à 15 h 30 à Paris. Pour le DAX, 0900-0930. Visible en M30 et en dessous : en H1, aucune bougie n'ouvre à 15 h 30.", display = display.none)
+showHL = input.bool(true, "Haut et bas des séances", group = GS, tooltip = "Une fois la séance finie, son haut et son bas se prolongent jusqu'à ce que le prix aille les chercher, ou jusqu'à la séance suivante du même nom.", display = display.none)
+showPoc = input.bool(true, "POC des séances", group = GS, tooltip = "Le prix où la séance a échangé le plus de volume, en trait d'encre. Une fois la séance finie, il avance jusqu'à ce que le prix repasse dessus : un POC « nu ». Calculé sur les bougies du graphique, il gagne en précision dans les petites unités de temps. Le volume du forex est un nombre de ticks ; sans volume, chaque bougie compte pareil. C'est la seule mesure de volume de l'indicateur : ce n'est pas de l'order flow.", display = display.none)
+nDays  = input.int(5, "Jours affichés", minval = 1, maxval = 30, group = GS, tooltip = "Les séances et les niveaux d'hier restent visibles sur ce nombre de jours.", display = display.none)
+
+// ─── Entrées : liquidité ────────────────────────────────────────────────────
+GL = "2 · Liquidité"
+showDay   = input.bool(true, "Haut et bas d'hier", group = GL, tooltip = "Liquidité au sens ICT et SMC : les stops supposés au-delà des sommets et des creux, lus sur les prix, sans order flow. Hier : en tirets fins. La ligne s'arrête et pâlit quand le prix va chercher le niveau.", display = display.none)
+showWeek  = input.bool(true, "Haut et bas de la semaine passée", group = GL, tooltip = "En tirets de 2 px, comme dans tes dessins.", display = display.none)
+showMonth = input.bool(true, "Haut et bas du mois passé", group = GL, tooltip = "En tirets de 3 px.", display = display.none)
+showEq    = input.bool(true, "Sommets et creux égaux", group = GL, tooltip = "Deux sommets (ou deux creux) au même niveau, à la tolérance près : les stops s'y accumulent (leçon 14). Un sommet : une bougie plus haute que les deux de chaque côté.", display = display.none)
+tolEq     = input.float(0.1, "Tolérance (× ATR)", minval = 0, step = 0.05, group = GL, display = display.none)
+showRound = input.bool(true, "Chiffres ronds", inline = "rn", group = GL, display = display.none)
+stepMan   = input.float(0, "pas", minval = 0, inline = "rn", group = GL, tooltip = "Les deux plus proches au-dessus et au-dessous du prix, en trait fin (leçon 14). 0 : pas automatique, 50 pips sur le forex ; ailleurs, de un à cinq chiffres ronds dans une journée moyenne.", display = display.none)
+showOpen  = input.bool(false, "Ouvertures du jour et de la semaine", group = GL, tooltip = "En pointillés d'encre. Au-dessus, le prix monte sur la journée (ou la semaine) ; au-dessous, il baisse.", display = display.none)
+
+// ─── Entrées : zones H4 ─────────────────────────────────────────────────────
+GZ = "3 · Zones H4"
+showFvg  = input.bool(true, "FVG", inline = "z", group = GZ, display = display.none)
+showOb   = input.bool(true, "Order blocks", inline = "z", group = GZ, tooltip = "Leçon 15, en H4. FVG : le trou entre la bougie 1 et la bougie 3 d'une impulsion, en fond plein. Order block : la dernière bougie contraire avant l'impulsion, en fond bordé. Vert : zone d'achat ; rouge : zone de vente. Affichées jusqu'au H4.", display = display.none)
+zoneN    = input.int(2, "Zones affichées de chaque côté", minval = 1, maxval = 20, group = GZ, tooltip = "Les plus récentes encore intactes. Toutes comptent pour la condition 2, même cachées.", display = display.none)
+zoneDays = input.int(30, "Durée de vie (jours)", minval = 1, maxval = 60, group = GZ, tooltip = "Une zone tient tant qu'aucune bougie H4 ne clôture au-delà, et 30 jours au plus dans le test.", display = display.none)
+
+// ─── Entrées : structure ────────────────────────────────────────────────────
+GK = "4 · Structure"
+showSt = input.bool(false, "Cassures de structure", group = GK, tooltip = "Leçon 05. BOS : la clôture casse le dernier sommet (ou creux) dans le sens de la tendance, qui continue. CHoCH : la première cassure dans l'autre sens, la tendance tourne.", display = display.none)
+stLen  = input.int(5, "Force des swings", minval = 2, maxval = 20, group = GK, tooltip = "Un swing : la bougie la plus haute (ou la plus basse) de N bougies de chaque côté. Les sweeps gardent les swings de la leçon 16, deux bougies de chaque côté.", display = display.none)
+
+// ─── Entrées : stratégie d'école ────────────────────────────────────────────
+GX = "5 · Stratégie d'école"
+showSw   = input.bool(true, "Sweeps", group = GX, tooltip = "Une mèche au-delà du dernier sommet (ou creux) intact, qui clôture en deçà : les stops sont pris (condition 3 de la leçon 16). BSL au-dessus de la mèche quand un sommet est pris, la liquidité acheteuse ; SSL dessous quand un creux est pris, la liquidité vendeuse. En couleur dans le sens de l'EMA 200 daily (condition 1), avec un trait ambre du niveau pris à la mèche ; en gris à contre-sens.", display = display.none)
+hideCtr  = input.bool(false, "Masquer les sweeps à contre-sens", group = GX, display = display.none)
+showPlan = input.bool(true, "Plans de trade", group = GX, tooltip = "Pour chaque sweep dans le sens : l'ordre stop, le stop et l'objectif (conditions 4 à 6). L'ordre se pose au passage suivant (8 h, 12 h 30 ou 18 h 30, en semaine) et s'annule après 24 h, ou si le prix touche le stop avant.", display = display.none)
+onlyH1   = input.bool(true, "Plans seulement en H1", group = GX, tooltip = "La stratégie a été testée en H1. Dans une autre unité de temps, les sweeps restent affichés, sans plan.", display = display.none)
+needZone = input.bool(false, "Exiger une zone H4", group = GX, tooltip = "Condition 2. Activé : pas de plan sans order block ni FVG H4 touché par la mèche. Désactivé : chaque plan dit s'il est sur une zone. Un support reste à juger à l'œil.", display = display.none)
+showRes  = input.bool(true, "Résultat des plans passés", group = GX, tooltip = "+2R ou −1R à la sortie de chaque plan exécuté, sans les frais. Pratique au Replay (leçon 19).", display = display.none)
+mrgMode  = input.string("Auto", "Marge du stop", options = ["Auto", "Pips", "ATR"], group = GX, tooltip = "Auto : en pips sur le forex, comme la leçon 16 ; en ATR 14 ailleurs. 0,46 ATR et 0,09 ATR valent 5 pips et 1 pip sur l'EUR/USD en H1 : la même règle, à la mesure de ce que bouge l'actif.", display = display.none)
+mrgPip   = input.float(5, "Pips : marge", minval = 0, step = 0.5, inline = "p", group = GX, display = display.none)
+offPip   = input.float(1, "décalage", minval = 0, step = 0.5, inline = "p", group = GX, display = display.none)
+mrgAtr   = input.float(0.46, "ATR : marge", minval = 0, step = 0.01, inline = "a", group = GX, display = display.none)
+offAtr   = input.float(0.09, "décalage", minval = 0, step = 0.01, inline = "a", group = GX, tooltip = "Le décalage place l'ordre stop au-delà du swing qui précède la mèche : 1 pip dans la leçon 16.", display = display.none)
+rr       = input.float(2, "Objectif (R)", minval = 0.5, step = 0.5, group = GX, tooltip = "2R dans la leçon 16.", display = display.none)
+feeMode  = input.string("Auto", "Frais par trade", options = ["Auto", "Manuels"], inline = "f", group = GX, display = display.none)
+feeMan   = input.float(1, "", minval = 0, step = 0.01, inline = "f", group = GX, tooltip = "Aller-retour, comptés dans le bilan et dans le risque. Auto : 1 pip sur le forex, 0,1 % du prix sur la crypto, 0,01 % ailleurs, proches des frais du test. Manuels : en pips sur le forex, en % du prix ailleurs.", display = display.none)
+
+// ─── Entrées : taille de position ───────────────────────────────────────────
+GP = "6 · Taille de position"
+capital = input.float(10000, "Capital", minval = 0, inline = "c", group = GP, display = display.none)
+acct    = input.string("EUR", "", options = ["EUR", "USD", "GBP", "CHF", "CAD", "JPY"], inline = "c", group = GP, display = display.none)
+riskPct = input.float(1, "Risque par trade (%)", minval = 0.1, maxval = 10, step = 0.1, group = GP, tooltip = "1 % dans la leçon 08. La taille s'affiche dans le tableau pour le plan en cours.", display = display.none)
+lotMode = input.string("Auto", "Taille d'un lot", options = ["Auto", "Manuelle"], inline = "l", group = GP, tooltip = "Auto : 100 000 unités sur le forex, 100 onces sur l'or, 5 000 sur l'argent, 1 ailleurs. Vérifie chez ton courtier, surtout pour les indices en CFD.", display = display.none)
+lotMan  = input.float(1, "", minval = 0.0001, inline = "l", group = GP, display = display.none)
+
+// ─── Entrées : VWAP ─────────────────────────────────────────────────────────
+GV = "7 · VWAP"
+showVw  = input.bool(false, "Afficher", inline = "v", group = GV, display = display.none)
+vwAnc   = input.string("Jour", "", options = ["Jour", "Semaine"], inline = "v", group = GV, tooltip = "Le prix moyen pondéré par les volumes depuis le début du jour (ou de la semaine), très suivi sur les indices et la crypto. Sans volume, chaque bougie compte pareil.", display = display.none)
+vwBands = input.bool(true, "Bandes à 1 et 2 écarts-types", group = GV, display = display.none)
+
+// ─── Entrées : tableau ──────────────────────────────────────────────────────
+GT = "8 · Tableau"
+showTable = input.bool(true, "Afficher", inline = "t1", group = GT, display = display.none)
+tablePos  = input.string("En bas à droite", "", options = ["En bas à droite", "En haut à droite", "En haut à gauche", "En bas à gauche"], inline = "t1", group = GT, tooltip = "En bas à droite par défaut : EMA · RSI occupe le haut.", display = display.none)
+tCtx  = input.bool(true, "Contexte", inline = "t2", group = GT, display = display.none)
+tPln  = input.bool(true, "Plan", inline = "t2", group = GT, display = display.none)
+tHist = input.bool(true, "Bilan", inline = "t2", group = GT, tooltip = "Contexte : sens, tendance, séance, amplitude du jour, prochain passage. Plan : le dernier plan ouvert et sa taille. Bilan : les plans passés de ce graphique, frais compris.", display = display.none)
+tSize = input.string("Normal", "Texte", options = ["Normal", "Petit"], inline = "t3", group = GT, display = display.none)
+tComp = input.bool(false, "Compact", inline = "t3", group = GT, tooltip = "Compact : le sens, la cible de liquidité, l'ordre et sa taille, et le feu rouge s'il s'allume. Pratique sur un petit écran.", display = display.none)
+
+// ─── Entrées : alertes ──────────────────────────────────────────────────────
+GAL = "9 · Alertes"
+alReady = input.bool(true, "Plan prêt", inline = "al1", group = GAL, display = display.none)
+alFill  = input.bool(true, "Ordre exécuté", inline = "al1", group = GAL, display = display.none)
+alExit  = input.bool(true, "Plan clos", inline = "al1", group = GAL, display = display.none)
+alLvl   = input.bool(false, "Niveau pris", inline = "al2", group = GAL, display = display.none)
+alSweep = input.bool(false, "Sweep dans le sens", inline = "al2", group = GAL, display = display.none)
+alZone  = input.bool(false, "Zone H4 touchée", inline = "al2", group = GAL, tooltip = "Ce qu'envoie l'alerte « Toute fonction alert() ». Niveau pris : un haut ou un bas d'hier, de la semaine, du mois ou d'une séance. Sweep dans le sens : chaque BSL ou SSL dans le sens de l'EMA 200 daily, avec les niveaux qu'il a pris. Zone H4 touchée : la première fois, dans le sens de l'EMA 200 daily.", display = display.none)
+
+
+// ─── Fonctions ──────────────────────────────────────────────────────────────
+// Nombre à la française : virgule décimale, espace pour les milliers.
+fr(float x, string fmt) =>
+    str.replace_all(str.replace_all(str.tostring(x, fmt), ",", " "), ".", ",")
+
+// Résultat en R, signé : « +2R », « −1R » ; une moyenne nulle s'écrit « 0,00R ».
+frR(float r, string fmt) =>
+    str.replace_all(fr(r, fmt), "-", "−") + "R"
+
+avgR(float r) =>
+    math.abs(r) < 0.005 ? "0,00R" : frR(r, "+0.00;-0.00")
+
+// Lisibilité : le texte est mêlé au fond selon sa transparence, puis comparé au fond. Sous un contraste de 4,5:1,
+// il devient d'abord plus opaque, puis plus sombre sur fond clair (plus clair sur fond sombre), par pas de 10 %.
+lin(float v) =>
+    v <= 0.03928 ? v / 12.92 : math.pow((v + 0.055) / 1.055, 2.4)
+
+lum(color c) =>
+    0.2126 * lin(color.r(c) / 255) + 0.7152 * lin(color.g(c) / 255) + 0.0722 * lin(color.b(c) / 255)
+
+mixBg(color c, color bg) =>
+    float a = 1 - color.t(c) / 100
+    color.rgb(math.round(color.r(c) * a + color.r(bg) * (1 - a)), math.round(color.g(c) * a + color.g(bg) * (1 - a)), math.round(color.b(c) * a + color.b(bg) * (1 - a)))
+
+contrast(color c, color bg) =>
+    float l1 = lum(mixBg(c, bg))
+    float l2 = lum(bg)
+    (math.max(l1, l2) + 0.05) / (math.min(l1, l2) + 0.05)
+
+readable(color c) =>
+    color bg   = chart.bg_color
+    bool  lite = lum(bg) > 0.5
+    color out  = c
+    for i = 1 to 20
+        if contrast(out, bg) >= 4.5
+            break
+        if color.t(out) > 0
+            out := color.new(out, math.max(0, color.t(out) - 10))
+        else if lite
+            out := color.rgb(math.floor(color.r(out) * 0.9), math.floor(color.g(out) * 0.9), math.floor(color.b(out) * 0.9))
+        else
+            out := color.rgb(math.round(color.r(out) + (255 - color.r(out)) * 0.1), math.round(color.g(out) + (255 - color.g(out)) * 0.1), math.round(color.b(out) + (255 - color.b(out)) * 0.1))
+    out
+
+// Prochain passage de la routine (8 h, 12 h 30, 18 h 30 à Paris, en semaine) à partir de l'instant t.
+nextRoutine(int t) =>
+    int res = na
+    for d = 0 to 7
+        if na(res)
+            int base = t + d * DAY
+            int dw = dayofweek(base, TZ)
+            if dw != dayofweek.saturday and dw != dayofweek.sunday
+                for j = 0 to 2
+                    int ts = timestamp(TZ, year(base, TZ), month(base, TZ), dayofmonth(base, TZ), j == 0 ? 8 : j == 1 ? 12 : 18, j == 0 ? 0 : 30, 0)
+                    if na(res) and ts >= t
+                        res := ts
+    res
+
+// Heure à la française (« 18 h 30 »), précédée du jour si ce n'est pas le même que ref.
+hm(int t, int ref) =>
+    int h = hour(t, TZ)
+    int m = minute(t, TZ)
+    string day = switch dayofweek(t, TZ)
+        dayofweek.monday    => "lun. "
+        dayofweek.tuesday   => "mar. "
+        dayofweek.wednesday => "mer. "
+        dayofweek.thursday  => "jeu. "
+        dayofweek.friday    => "ven. "
+        dayofweek.saturday  => "sam. "
+        =>                     "dim. "
+    (dayofmonth(t, TZ) == dayofmonth(ref, TZ) and t - ref < DAY ? "" : day) + str.tostring(h) + " h" + (m > 0 ? " " + str.tostring(m) : "")
+
+// La journée de Paris d'un instant, en un nombre : 20261107.
+dayKey(int t) =>
+    year(t, TZ) * 10000 + month(t, TZ) * 100 + dayofmonth(t, TZ)
+
+inSes(simple string s) =>
+    not na(time(timeframe.period, s, TZ))
+
+arrow(bool up, bool dn) =>
+    up ? "▲" : dn ? "▼" : "n/d"
+
+// Chaque famille de dessins garde ses N derniers : le total reste sous les 500 de TradingView,
+// qui sinon effacerait les plus anciens, même encore utiles (le haut de la semaine, du mois).
+keepLine(array<line> arr, line l, int cap) =>
+    arr.push(l)
+    while arr.size() > cap
+        arr.shift().delete()
+    l
+
+keepLabel(array<label> arr, label l, int cap) =>
+    arr.push(l)
+    while arr.size() > cap
+        arr.shift().delete()
+    l
+
+// ─── Actif ──────────────────────────────────────────────────────────────────
+// Pip du forex : 0,0001 (0,01 sur les paires en yen). Les prix s'affichent au pip près sur le forex.
+isMetal = str.contains(syminfo.ticker, "XAU") or str.contains(syminfo.ticker, "XAG")
+isFx   = syminfo.type == "forex" and not isMetal
+dec    = math.round(-math.log(syminfo.mintick) / math.log(10))
+pip    = isFx and (dec == 3 or dec == 5) ? syminfo.mintick * 10 : syminfo.mintick
+usePip = mrgMode == "Pips" or (mrgMode == "Auto" and isFx)
+pxFmt  = isFx ? (dec >= 4 ? "0.0000" : "0.00") : format.mintick
+tfSec  = timeframe.in_seconds(timeframe.period)
+intraday = timeframe.isintraday
+
+px(float x) =>
+    fr(x, pxFmt)
+
+// Frais aller-retour, en prix.
+feePx(float e) =>
+    feeMode == "Manuels" ? (isFx ? feeMan * pip : feeMan / 100 * e) : isFx ? pip : syminfo.type == "crypto" ? 0.001 * e : 0.0001 * e
+
+atr = ta.atr(14)
+
+// Le volume de la bougie ; sans volume, chaque bougie compte pareil.
+vol1 = na(volume) or volume <= 0 ? 1.0 : volume
+
+// Tout ce qui vient d'une autre unité de temps est pris à la clôture de sa bougie précédente : rien ne repeint.
+// Sens : clôture daily de la veille au-dessus (achats) ou au-dessous (ventes) de son EMA 200.
+[dUp, dDn, dOk, pdh, pdl, adr] = request.security(syminfo.tickerid, "D", [close[1] > ta.ema(close, 200)[1], close[1] < ta.ema(close, 200)[1], not na(ta.ema(close, 200)[1]), high[1], low[1], ta.sma(high - low, 14)[1]], lookahead = barmerge.lookahead_on)
+// Au-dessus du daily, la demande porte sur une unité plus petite : TradingView n'en rend qu'une bougie, le sens n'est pas fiable.
+// Sans 200 jours d'historique, l'EMA 200 n'existe pas : le sens est inconnu, et aucun sweep n'a de plan.
+dKnown = dOk and tfSec <= 86400
+[pwh, pwl, wUp, wDn] = request.security(syminfo.tickerid, "W", [high[1], low[1], close[1] > ta.ema(close, 200)[1], close[1] < ta.ema(close, 200)[1]], lookahead = barmerge.lookahead_on)
+[pmh, pml] = request.security(syminfo.tickerid, "M", [high[1], low[1]], lookahead = barmerge.lookahead_on)
+[h1Up, h1Dn] = request.security(syminfo.tickerid, "60", [close[1] > ta.ema(close, 200)[1], close[1] < ta.ema(close, 200)[1]], lookahead = barmerge.lookahead_on)
+
+// Zones H4 de la bougie qui vient de clôturer, la bougie 3 : le FVG entre la bougie 1 et la 3, et l'order block,
+// la dernière bougie contraire, de la bougie 1 aux quatre qui la précèdent. Mêmes règles que la variante D du test.
+h4Zones() =>
+    bool  dnGap = low[3] > high[1]
+    bool  upGap = high[3] < low[1]
+    float sT = na
+    float sB = na
+    int   sX = na
+    float dT = na
+    float dB = na
+    int   dX = na
+    if dnGap
+        for j = 3 to 7
+            if close[j] > open[j]
+                sT := high[j]
+                sB := low[j]
+                sX := time[j]
+                break
+    if upGap
+        for j = 3 to 7
+            if close[j] < open[j]
+                dT := high[j]
+                dB := low[j]
+                dX := time[j]
+                break
+    [dnGap ? low[3] : na, dnGap ? high[1] : na, upGap ? low[1] : na, upGap ? high[3] : na, time[2], sT, sB, sX, dT, dB, dX, close[1], close[1] > ta.ema(close, 200)[1], close[1] < ta.ema(close, 200)[1], time, time_close[1]]
+
+[gSupT, gSupB, gDemT, gDemB, gapX, obSupT, obSupB, obSupX, obDemT, obDemB, obDemX, h4Close, h4Up, h4Dn, h4T, h4Born] = request.security(syminfo.tickerid, "240", h4Zones(), lookahead = barmerge.lookahead_on)
+newH4 = h4T != h4T[1]
+
+// Taille de position : risque en devise du compte, converti depuis la devise de cotation.
+ccy   = syminfo.currency == "USDT" or syminfo.currency == "USDC" ? "USD" : syminfo.currency
+rateR = request.currency_rate(ccy, acct, ignore_invalid_currency = true)
+rate  = ccy == acct ? 1.0 : rateR
+lotSz = lotMode == "Manuelle" ? lotMan : isFx ? 100000.0 : str.contains(syminfo.ticker, "XAU") ? 100.0 : str.contains(syminfo.ticker, "XAG") ? 5000.0 : 1.0
+
+sizeTxt(float dist) =>
+    float units = capital * riskPct / 100 / (dist * syminfo.pointvalue * rate)
+    float lots  = math.floor(units / lotSz * 100) / 100
+    string unit = isFx ? syminfo.basecurrency : isMetal ? "oz" : "unités"
+    if na(units) or dist <= 0
+        "n/d"
+    else if lotSz > 1
+        fr(lots, "0.00") + (lots >= 2 ? " lots · " : " lot · ") + fr(units, "#,##0") + " " + unit
+    else if syminfo.type == "crypto"
+        fr(units, "0.0000") + " " + syminfo.basecurrency
+    else if syminfo.type == "futures"
+        fr(units, "0.0") + (units >= 2 ? " contrats" : " contrat")
+    else
+        fr(units, "0.00") + " unités"
+
+// ─── Séances ────────────────────────────────────────────────────────────────
+// Une boîte par séance, du plus bas au plus haut, et son nom posé au-dessus du coin gauche.
+var array<box>   sesBoxes  = array.new<box>()
+var array<label> sesLabels = array.new<label>()
+var box   bA = na
+var box   bL = na
+var box   bN = na
+var box   bO = na
+var label nA = na
+var label nL = na
+var label nN = na
+var label nO = na
+
+inA = inSes(sA)
+inL = inSes(sL)
+inN = inSes(sN)
+inO = inSes(sO)
+
+sesBox(bool on, bool inNow, bool inPrev, box cur) =>
+    box b = cur
+    if showSes and intraday and on and inNow
+        if not inPrev or na(b)
+            b := box.new(bar_index, high, bar_index, low, border_color = color(na), bgcolor = color.new(C_SES, T_SES))
+            sesBoxes.push(b)
+        else
+            b.set_right(bar_index)
+            b.set_top(math.max(b.get_top(), high))
+            b.set_bottom(math.min(b.get_bottom(), low))
+    b
+
+sesName(bool on, bool inNow, bool inPrev, label cur, box b, string name) =>
+    label l = cur
+    if showSes and intraday and on and inNow
+        if not inPrev or na(l)
+            l := label.new(bar_index, b.get_top(), name, color = color(na), textcolor = readable(color.new(C_INK, 45)), style = label.style_label_lower_left, size = size.small)
+            sesLabels.push(l)
+        else
+            l.set_y(b.get_top())
+    l
+
+bA := sesBox(onA, inA, inA[1], bA)
+bL := sesBox(onL, inL, inL[1], bL)
+bN := sesBox(onN, inN, inN[1], bN)
+bO := sesBox(onO, inO, inO[1], bO)
+nA := sesName(onA, inA, inA[1], nA, bA, "Asie")
+nL := sesName(onL, inL, inL[1], nL, bL, "Londres")
+nN := sesName(onN, inN, inN[1], nN, bN, "New York")
+nO := sesName(onO, inO, inO[1], nO, bO, "Ouverture")
+
+// Haut et bas d'une séance finie : ils avancent jusqu'à ce que le prix les prenne,
+// ou jusqu'au début de la séance suivante du même nom.
+var array<line>   hlLine = array.new<line>()
+var array<string> hlName = array.new<string>()
+var array<string> hlSes  = array.new<string>()
+var array<int>    hlSide = array.new<int>()
+var array<line>   hlHist = array.new<line>()
+HL_CAP = math.min(6 * nDays, 60)
+
+hlOpen(box b, string ses, string nmHi, string nmLo) =>
+    if showSes and showHL and not na(b)
+        int   x = b.get_right()
+        float t = b.get_top()
+        float u = b.get_bottom()
+        hlLine.push(line.new(x, t, bar_index, t, color = color.new(C_LIQ, 25), width = 1))
+        hlName.push(nmHi)
+        hlSes.push(ses)
+        hlSide.push(1)
+        hlLine.push(line.new(x, u, bar_index, u, color = color.new(C_LIQ, 25), width = 1))
+        hlName.push(nmLo)
+        hlSes.push(ses)
+        hlSide.push(-1)
+
+hlRetire(string ses) =>
+    if hlLine.size() > 0
+        for i = hlLine.size() - 1 to 0
+            if hlSes.get(i) == ses
+                hlLine.get(i).set_color(color.new(C_LIQ, 65))
+                keepLine(hlHist, hlLine.get(i), HL_CAP)
+                hlLine.remove(i)
+                hlName.remove(i)
+                hlSes.remove(i)
+                hlSide.remove(i)
+
+// ─── POC des séances ────────────────────────────────────────────────────────
+// Le prix où la séance a échangé le plus de volume : le volume de chaque bougie est réparti à parts égales sur les
+// tranches de prix qu'elle couvre, 40 tranches entre le plus bas et le plus haut de la séance. Calculé sur les bougies
+// du graphique : en H1, c'est une approximation ; en M5, il est presque exact.
+type SesVP
+    array<float> hi
+    array<float> lo
+    array<float> vo
+
+newVP() =>
+    SesVP.new(array.new<float>(), array.new<float>(), array.new<float>())
+
+var SesVP vpA = newVP()
+var SesVP vpL = newVP()
+var SesVP vpN = newVP()
+var array<line>   pcLine = array.new<line>()
+var array<string> pcSes  = array.new<string>()
+var array<line>   pcHist = array.new<line>()
+var array<line>   pcLive = array.new<line>()
+PC_CAP = math.min(3 * nDays, 30)
+
+pocOf(SesVP v, float top, float bot) =>
+    int   n   = 40
+    float stp = (top - bot) / n
+    float res = na
+    if v.hi.size() > 0 and not na(stp)
+        if stp <= 0
+            res := top
+        else
+            array<float> bins = array.new<float>(n, 0.0)
+            for i = 0 to v.hi.size() - 1
+                int b0 = math.max(0, math.min(n - 1, math.floor((v.lo.get(i) - bot) / stp)))
+                int b1 = math.max(0, math.min(n - 1, math.floor((v.hi.get(i) - bot) / stp)))
+                float share = v.vo.get(i) / (b1 - b0 + 1)
+                for b = b0 to b1
+                    bins.set(b, bins.get(b) + share)
+            int best = 0
+            for b = 1 to n - 1
+                if bins.get(b) > bins.get(best)
+                    best := b
+            res := bot + (best + 0.5) * stp
+    res
+
+// Les bougies de la séance en cours ; elles repartent de zéro au début de la séance.
+vpPush(SesVP v, bool inNow, bool inPrev) =>
+    if inNow
+        if not inPrev
+            v.hi.clear()
+            v.lo.clear()
+            v.vo.clear()
+        if v.hi.size() < 3000
+            v.hi.push(high)
+            v.lo.push(low)
+            v.vo.push(vol1)
+
+pocOpen(box b, SesVP v, string ses) =>
+    if showSes and showPoc and not na(b)
+        float y = pocOf(v, b.get_top(), b.get_bottom())
+        if not na(y)
+            pcLine.push(line.new(b.get_left(), y, bar_index, y, color = color.new(C_INK, 30), width = 1))
+            pcSes.push(ses)
+
+pocRetire(string ses) =>
+    if pcLine.size() > 0
+        for i = pcLine.size() - 1 to 0
+            if pcSes.get(i) == ses
+                line l = pcLine.get(i)
+                l.set_color(color.new(C_INK, 75))
+                keepLine(pcHist, l, PC_CAP)
+                pcLine.remove(i)
+                pcSes.remove(i)
+
+// ─── Haut et bas d'hier, de la semaine, du mois passés ──────────────────────
+// Tirets ambre : 1 px pour hier, 2 px pour la semaine, 3 px pour le mois. Un niveau pris s'arrête là où le prix
+// l'a atteint, et pâlit.
+var array<line> dayLines   = array.new<line>()
+var array<line> weekLines  = array.new<line>()
+var array<line> monthLines = array.new<line>()
+var array<line> dayOpens   = array.new<line>()
+var array<line> weekOpens  = array.new<line>()
+var line lDh = na
+var line lDl = na
+var line lWh = na
+var line lWl = na
+var line lMh = na
+var line lMl = na
+var line oD  = na
+var line oW  = na
+var bool tDh = true
+var bool tDl = true
+var bool tWh = true
+var bool tWl = true
+var bool tMh = true
+var bool tMl = true
+bool takeDay  = false
+bool takeWeek = false
+bool takeSes  = false
+string takenHi = ""
+string takenLo = ""
+
+addName(string acc, string nm) =>
+    acc == "" ? nm : acc + ", " + nm
+OPEN_CAP = math.min(nDays, 10)
+
+newDay   = timeframe.change("D")
+newWeek  = timeframe.change("W")
+newMonth = timeframe.change("M")
+
+// L'amplitude du jour, mesurée bougie après bougie, pour le tableau.
+var float dHi = na
+var float dLo = na
+dHi := newDay or na(dHi) ? high : math.max(dHi, high)
+dLo := newDay or na(dLo) ? low : math.min(dLo, low)
+
+newLevel(array<line> arr, float y, int w) =>
+    line l = line.new(bar_index, y, bar_index, y, color = C_LIQ, style = line.style_dashed, width = w)
+    arr.push(l)
+    l
+
+// Prolonge le niveau tant qu'il tient ; renvoie vrai à la barre où le prix va le chercher.
+holdLevel(line l, bool taken, bool isHigh) =>
+    bool hit = false
+    if not na(l) and not taken
+        l.set_x2(bar_index)
+        if isHigh ? high > l.get_y1() : low < l.get_y1()
+            hit := true
+            l.set_color(color.new(C_LIQ, 65))
+    hit
+
+lvlAlert(bool hit, string name, line l) =>
+    if hit and alLvl
+        alert(syminfo.ticker + " : " + name + " pris, " + px(l.get_y1()), alert.freq_once_per_bar_close)
+
+if intraday and barstate.isconfirmed
+    if newDay
+        // Les séances et les niveaux plus anciens que les jours affichés sont effacés.
+        while sesBoxes.size() > 4 * nDays
+            sesBoxes.shift().delete()
+        while sesLabels.size() > 4 * nDays
+            sesLabels.shift().delete()
+        while dayLines.size() > 2 * (nDays - 1)
+            dayLines.shift().delete()
+        if showDay
+            lDh := newLevel(dayLines, pdh, 1)
+            lDl := newLevel(dayLines, pdl, 1)
+            tDh := false
+            tDl := false
+        if showOpen
+            oD := keepLine(dayOpens, line.new(bar_index, open, bar_index, open, color = color.new(C_INK, 40), style = line.style_dotted, width = 1), OPEN_CAP)
+    if newWeek
+        if showWeek
+            // On garde la semaine en cours et la précédente.
+            while weekLines.size() > 2
+                weekLines.shift().delete()
+            lWh := newLevel(weekLines, pwh, 2)
+            lWl := newLevel(weekLines, pwl, 2)
+            tWh := false
+            tWl := false
+        if showOpen
+            oW := keepLine(weekOpens, line.new(bar_index, open, bar_index, open, color = color.new(C_INK, 40), style = line.style_dotted, width = 2), 2)
+    if newMonth and showMonth
+        while monthLines.size() > 2
+            monthLines.shift().delete()
+        lMh := newLevel(monthLines, pmh, 3)
+        lMl := newLevel(monthLines, pml, 3)
+        tMh := false
+        tMl := false
+    hDh = holdLevel(lDh, tDh, true)
+    hDl = holdLevel(lDl, tDl, false)
+    hWh = holdLevel(lWh, tWh, true)
+    hWl = holdLevel(lWl, tWl, false)
+    hMh = holdLevel(lMh, tMh, true)
+    hMl = holdLevel(lMl, tMl, false)
+    tDh := tDh or hDh
+    tDl := tDl or hDl
+    tWh := tWh or hWh
+    tWl := tWl or hWl
+    tMh := tMh or hMh
+    tMl := tMl or hMl
+    takeDay  := hDh or hDl
+    takeWeek := hWh or hWl
+    lvlAlert(hDh, "Haut J-1", lDh)
+    lvlAlert(hDl, "Bas J-1", lDl)
+    lvlAlert(hWh, "Haut S-1", lWh)
+    lvlAlert(hWl, "Bas S-1", lWl)
+    lvlAlert(hMh, "Haut M-1", lMh)
+    lvlAlert(hMl, "Bas M-1", lMl)
+    if hDh
+        takenHi := addName(takenHi, "Haut J-1")
+    if hWh
+        takenHi := addName(takenHi, "Haut S-1")
+    if hMh
+        takenHi := addName(takenHi, "Haut M-1")
+    if hDl
+        takenLo := addName(takenLo, "Bas J-1")
+    if hWl
+        takenLo := addName(takenLo, "Bas S-1")
+    if hMl
+        takenLo := addName(takenLo, "Bas M-1")
+    if not na(oD)
+        oD.set_x2(bar_index)
+    if not na(oW)
+        oW.set_x2(bar_index)
+
+    // Séances : à la fin, leur haut et leur bas partent vers la droite ; au début, ceux de la veille s'arrêtent.
+    if onA and inA[1] and not inA
+        hlOpen(bA, "Asie", "Haut Asie", "Bas Asie")
+    if onL and inL[1] and not inL
+        hlOpen(bL, "Londres", "Haut Londres", "Bas Londres")
+    if onN and inN[1] and not inN
+        hlOpen(bN, "New York", "Haut New York", "Bas New York")
+    if onO and inO[1] and not inO
+        hlOpen(bO, "Ouverture", "Haut ouverture", "Bas ouverture")
+    if inA and not inA[1]
+        hlRetire("Asie")
+    if inL and not inL[1]
+        hlRetire("Londres")
+    if inN and not inN[1]
+        hlRetire("New York")
+    if inO and not inO[1]
+        hlRetire("Ouverture")
+    if hlLine.size() > 0
+        for i = hlLine.size() - 1 to 0
+            line l = hlLine.get(i)
+            l.set_x2(bar_index)
+            if hlSide.get(i) == 1 ? high > l.get_y1() : low < l.get_y1()
+                l.set_color(color.new(C_LIQ, 65))
+                takeSes := true
+                if hlSide.get(i) == 1
+                    takenHi := addName(takenHi, hlName.get(i))
+                else
+                    takenLo := addName(takenLo, hlName.get(i))
+                if alLvl
+                    alert(syminfo.ticker + " : " + hlName.get(i) + " pris, " + px(l.get_y1()), alert.freq_once_per_bar_close)
+                keepLine(hlHist, l, HL_CAP)
+                hlLine.remove(i)
+                hlName.remove(i)
+                hlSes.remove(i)
+                hlSide.remove(i)
+
+    // POC : à la fin d'une séance, le sien part vers la droite jusqu'à ce que le prix repasse dessus ;
+    // au début, celui de la veille s'arrête et les bougies repartent de zéro.
+    if onA and inA[1] and not inA
+        pocOpen(bA, vpA, "Asie")
+    if onL and inL[1] and not inL
+        pocOpen(bL, vpL, "Londres")
+    if onN and inN[1] and not inN
+        pocOpen(bN, vpN, "New York")
+    if inA and not inA[1]
+        pocRetire("Asie")
+    if inL and not inL[1]
+        pocRetire("Londres")
+    if inN and not inN[1]
+        pocRetire("New York")
+    vpPush(vpA, inA, inA[1])
+    vpPush(vpL, inL, inL[1])
+    vpPush(vpN, inN, inN[1])
+    if pcLine.size() > 0
+        for i = pcLine.size() - 1 to 0
+            line l = pcLine.get(i)
+            l.set_x2(bar_index)
+            if low <= l.get_y1() and high >= l.get_y1()
+                l.set_color(color.new(C_INK, 75))
+                keepLine(pcHist, l, PC_CAP)
+                pcLine.remove(i)
+                pcSes.remove(i)
+
+// ─── Zones H4 : order blocks et FVG ─────────────────────────────────────────
+// Une zone naît à la clôture de la bougie H4 qui crée le FVG. Elle meurt quand une bougie H4 clôture au-delà de
+// son autre bord, ou après la durée de vie. Seules les plus récentes encore vivantes s'affichent, de chaque côté.
+// Dans le test, jamais plus de 54 zones ne vivent en même temps : on en garde 150 au plus, toutes comptent.
+type Zone
+    box   bx
+    int   side
+    float top
+    float bot
+    int   born
+    bool  isOb
+    bool  shown   = true
+    bool  touched = false
+
+var array<Zone> zones    = array.new<Zone>()
+var array<box>  zoneHist = array.new<box>()
+zoneOk = intraday and tfSec <= 14400
+bool zoneTouch = false
+
+// Une zone morte s'arrête et pâlit ; on garde les 40 dernières, les autres s'effacent.
+killZone(Zone z, int x) =>
+    if not na(z.bx)
+        if z.shown
+            color c = z.side == 1 ? C_BULL : C_BEAR
+            z.bx.set_right(x)
+            z.bx.set_bgcolor(color.new(c, 96))
+            z.bx.set_border_color(z.isOb ? color.new(c, 85) : color(na))
+            zoneHist.push(z.bx)
+            while zoneHist.size() > 40
+                zoneHist.shift().delete()
+        else
+            z.bx.delete()
+
+// Deux FVG de suite peuvent désigner le même order block : il n'est gardé qu'une fois.
+newZone(int side, float top, float bot, int x, bool isOb) =>
+    bool dup = false
+    for z in zones
+        if z.side == side and z.isOb == isOb and z.top == top and z.bot == bot
+            dup := true
+    if not na(top) and not na(bot) and not na(x) and not dup
+        bool  vis = isOb ? showOb : showFvg
+        color c   = side == 1 ? C_BULL : C_BEAR
+        box   b   = vis ? box.new(x, top, time, bot, xloc = xloc.bar_time, border_color = isOb ? color.new(c, 55) : color(na), border_width = 1, bgcolor = color.new(c, T_ZONE)) : na
+        zones.push(Zone.new(b, side, top, bot, h4Born, isOb))
+        if zones.size() > 150
+            killZone(zones.shift(), time)
+
+// La condition 2 : la mèche touche une zone vivante du bon côté, et la clôture ne la traverse pas.
+zoneAt(int side) =>
+    string res = ""
+    for z in zones
+        if res == "" and z.side == side and time - z.born < zoneDays * DAY
+            if side == 1 ? low <= z.top and close >= z.bot : high >= z.bot and close <= z.top
+                res := z.isOb ? "OB" : "FVG"
+    res
+
+zoneTxt(string zs) =>
+    zs == "FVG" ? ", sur un FVG H4" : zs == "OB" ? ", sur un order block H4" : ", hors zone H4"
+
+if barstate.isconfirmed and zoneOk
+    if newH4 and not na(h4T)
+        if zones.size() > 0
+            for i = zones.size() - 1 to 0
+                Zone z = zones.get(i)
+                if (z.side == 1 ? h4Close < z.bot : h4Close > z.top) or h4T - z.born >= zoneDays * DAY
+                    killZone(z, h4T)
+                    zones.remove(i)
+        newZone(-1, gSupT, gSupB, gapX, false)
+        newZone(-1, obSupT, obSupB, obSupX, true)
+        newZone(1, gDemT, gDemB, gapX, false)
+        newZone(1, obDemT, obDemB, obDemX, true)
+    int nSup = 0
+    int nDem = 0
+    if zones.size() > 0
+        for i = zones.size() - 1 to 0
+            Zone z = zones.get(i)
+            if not na(z.bx)
+                bool shown = (z.side == 1 ? nDem : nSup) < zoneN
+                if z.side == 1
+                    nDem += 1
+                else
+                    nSup += 1
+                color c = z.side == 1 ? C_BULL : C_BEAR
+                z.shown := shown
+                z.bx.set_right(time)
+                z.bx.set_bgcolor(shown ? color.new(c, T_ZONE) : color(na))
+                z.bx.set_border_color(shown and z.isOb ? color.new(c, 55) : color(na))
+            if not z.touched and dKnown and (z.side == 1 ? dUp : dDn) and (z.side == 1 ? low <= z.top and close >= z.bot : high >= z.bot and close <= z.top)
+                z.touched := true
+                zoneTouch := true
+    if zoneTouch and alZone
+        alert(syminfo.ticker + " : le prix touche une zone H4, dans le sens de l'EMA 200 daily", alert.freq_once_per_bar_close)
+
+// ─── Swings, sommets égaux et sweeps ────────────────────────────────────────
+// Un sommet : une bougie strictement plus haute que les deux de chaque côté, dans l'unité de temps du graphique (H1 pour
+// la stratégie), confirmé deux barres après.
+// On garde les sommets encore intacts (jamais dépassés) des 72 dernières barres. Le plus récent est le plus bas :
+// un sommet plus ancien n'est intact que s'il domine tout ce qui suit.
+var array<int>   topBar = array.new<int>()
+var array<float> topPx  = array.new<float>()
+var array<int>   botBar = array.new<int>()
+var array<float> botPx  = array.new<float>()
+
+// Sommets et creux égaux encore intacts : la ligne avance jusqu'à ce que le prix aille les chercher.
+var array<line>  eqLines = array.new<line>()
+var array<int>   eqSide  = array.new<int>()
+var array<line>  eqHist  = array.new<line>()
+
+// Sweep de la barre précédente, en attente de son plan (le swing qui précède la mèche se confirme une barre après).
+var int    pSell = na
+var int    pSellTop = na
+var float  pSellExt = na
+var float  pSellAtr = na
+var label  pSellMk = na
+var string pSellTip = ""
+var string pSellZone = ""
+var int    pBuy = na
+var int    pBuyBot = na
+var float  pBuyExt = na
+var float  pBuyAtr = na
+var label  pBuyMk = na
+var string pBuyTip = ""
+var string pBuyZone = ""
+
+bool swSellWith = false
+bool swBuyWith  = false
+bool planNew    = false
+
+var array<label> swLabels  = array.new<label>()
+var array<line>  swLines   = array.new<line>()
+var array<label> resLabels = array.new<label>()
+var array<line>  planHist  = array.new<line>()
+
+// Le repère d'un sweep, au bout de la mèche : BSL quand un sommet est pris (la liquidité acheteuse), SSL quand un
+// creux est pris (la liquidité vendeuse). En couleur dans le sens de l'EMA 200 daily, en gris à contre-sens.
+mark(bool isHigh, bool inTrend, string tip) =>
+    color col = inTrend ? (isHigh ? C_BEAR : C_BULL) : color.new(chart.fg_color, 55)
+    keepLabel(swLabels, label.new(bar_index, isHigh ? high : low, isHigh ? "BSL" : "SSL", color = color(na), textcolor = readable(col), style = isHigh ? label.style_label_down : label.style_label_up, size = size.small, tooltip = tip), 200)
+
+// ─── Plans de trade ─────────────────────────────────────────────────────────
+// États : 0 ordre en attente, 1 en cours, 2 terminé, 3 raté (le prix est passé avant la pose),
+// 4 annulé (le prix a touché le stop avant l'entrée), 5 expiré (24 h sans exécution).
+type Plan
+    int    side
+    float  entry
+    float  stop
+    float  target
+    int    place
+    int    state = 0
+    float  fill
+    float  exitPx
+    line   lE
+    line   lS
+    line   lT
+    label  mk
+    string tip
+    string zone = ""
+
+var array<Plan> plans = array.new<Plan>()
+planOk = showPlan and (not onlyH1 or timeframe.period == "60")
+
+// Le bilan des plans exécutés sur ce graphique, frais compris.
+var int   stN   = 0
+var int   stW   = 0
+var float stR   = 0.0
+var int   stZN  = 0
+var float stZR  = 0.0
+var int   stCur = 0
+var int   stMax = 0
+
+// Le feu rouge de la leçon 18 : deux pertes dans la journée (heure de Paris), on s'arrête.
+var int lossDay = na
+var int lossN   = 0
+
+// Exécution barre par barre, comme dans le test. Deux approximations, faute de voir dans la bougie :
+// une bougie qui touche l'entrée et le stop avant l'exécution compte comme annulée ; une bougie qui touche le stop
+// et l'objectif compte comme perdante. La bougie qui contient l'heure de pose compte comme après la pose.
+// Un gap au-delà de l'entrée ou du stop s'exécute à l'ouverture.
+step(Plan p) =>
+    bool up    = p.side == 1
+    bool atE   = up ? high >= p.entry : low <= p.entry
+    bool atS   = up ? low <= p.stop : high >= p.stop
+    bool atT   = up ? high >= p.target : low <= p.target
+    if p.state == 0
+        if time_close <= p.place
+            if atE
+                p.state := 3
+            else if atS
+                p.state := 4
+        else if time >= p.place + DAY
+            p.state := 5
+        else if atS
+            p.state := 4
+        else if atE
+            p.fill  := up ? math.max(p.entry, open) : math.min(p.entry, open)
+            p.state := 1
+    else if p.state == 1
+        if atS
+            p.exitPx := up ? math.min(p.stop, open) : math.max(p.stop, open)
+            p.state  := 2
+        else if atT
+            p.exitPx := p.target
+            p.state  := 2
+
+stateTip(Plan p) =>
+    switch p.state
+        2 => "exécuté, " + frR(p.side * (p.exitPx - p.fill) / math.abs(p.entry - p.stop), "+0.#;-0.#")
+        3 => "raté : le prix a passé l'entrée avant la pose"
+        4 => "annulé : le prix a touché le stop avant l'entrée"
+        5 => "expiré : 24 h sans exécution"
+        =>   "en cours"
+
+// Le plan d'un sweep de la barre s, construit à la barre courante : vente, le dernier creux confirmé entre le
+// sommet pris et la mèche ; achat, le dernier sommet. L'ordre se pose au passage qui suit la clôture de la barre
+// courante : c'est le moment où le plan est connu, et où part l'alerte.
+makePlan(int side, int s, int i0, float ext, float a) =>
+    int   kMax = bar_index - i0 - 1
+    int   c    = na
+    float cPx  = na
+    if kMax >= 2
+        for k = 2 to kMax
+            bool piv = side == -1 ? low[k] < low[k + 1] and low[k] < low[k + 2] and low[k] < low[k - 1] and low[k] < low[k - 2] : high[k] > high[k + 1] and high[k] > high[k + 2] and high[k] > high[k - 1] and high[k] > high[k - 2]
+            if piv
+                c   := bar_index - k
+                cPx := side == -1 ? low[k] : high[k]
+                break
+    Plan p = na
+    if not na(c)
+        float mrg = usePip ? mrgPip * pip : mrgAtr * a
+        float off = usePip ? offPip * pip : offAtr * a
+        float e   = side == 1 ? cPx + off : cPx - off
+        float st  = side == 1 ? ext - mrg : ext + mrg
+        float tg  = e + side * rr * math.abs(e - st)
+        p := Plan.new(side, e, st, tg, nextRoutine(time_close))
+        p.lE := line.new(s, e,  bar_index, e,  color = color.new(C_INK, 25), width = 1)
+        p.lS := line.new(s, st, bar_index, st, color = C_BEAR, width = 1)
+        p.lT := line.new(s, tg, bar_index, tg, color = C_BULL, style = line.style_dotted, width = 1)
+    p
+
+// Le plan entre dans la liste et part en alerte. Au-delà de 25 plans ouverts (possible hors H1), le plus ancien
+// s'efface sans entrer au bilan, pour rester sous la limite des 500 lignes.
+addPlan(Plan p, label mk, string tip, string zone) =>
+    p.mk   := mk
+    p.tip  := tip
+    p.zone := zone
+    plans.push(p)
+    if plans.size() > 25
+        Plan old = plans.shift()
+        old.lE.delete()
+        old.lS.delete()
+        old.lT.delete()
+    if alReady
+        alert(syminfo.ticker + " : " + (p.side == 1 ? "achat stop " : "vente stop ") + px(p.entry) + ", stop " + px(p.stop) + ", objectif " + px(p.target) + ", ordre à poser à " + hm(p.place, time) + ". " + tip + (lossDay == dayKey(time) and lossN >= 2 ? ". Feu rouge : deux pertes aujourd'hui, pas de nouvel ordre." : ""), alert.freq_once_per_bar_close)
+
+if barstate.isconfirmed
+    // 1. Le plan des sweeps de la barre précédente : la bougie d'avant la mèche pouvait encore devenir le dernier
+    //    swing ; on le sait maintenant.
+    for side in array.from(-1, 1)
+        int s = side == -1 ? pSell : pBuy
+        if not na(s) and s == bar_index - 1
+            if side == -1
+                Plan p = makePlan(-1, s, pSellTop, pSellExt, pSellAtr)
+                if not na(p)
+                    addPlan(p, pSellMk, pSellTip, pSellZone)
+                    planNew := true
+            else
+                Plan p = makePlan(1, s, pBuyBot, pBuyExt, pBuyAtr)
+                if not na(p)
+                    addPlan(p, pBuyMk, pBuyTip, pBuyZone)
+                    planNew := true
+            if side == -1
+                pSell := na
+            else
+                pBuy := na
+
+    // 2. Les plans actifs avancent d'une barre ; un plan clos s'arrête là, pâlit et entre au bilan.
+    if plans.size() > 0
+        for i = plans.size() - 1 to 0
+            Plan p = plans.get(i)
+            int prev = p.state
+            step(p)
+            p.lE.set_x2(bar_index)
+            p.lS.set_x2(bar_index)
+            p.lT.set_x2(bar_index)
+            if prev == 0 and (p.state == 1 or p.state == 2) and alFill
+                alert(syminfo.ticker + " : " + (p.side == 1 ? "achat" : "vente") + " exécuté à " + px(p.fill) + ", stop " + px(p.stop) + ", objectif " + px(p.target), alert.freq_once_per_bar_close)
+            if p.state >= 2
+                p.lE.set_color(color.new(C_INK, 75))
+                p.lS.set_color(color.new(C_BEAR, 70))
+                p.lT.set_color(color.new(C_BULL, 70))
+                if not na(p.mk)
+                    p.mk.set_tooltip(p.tip + " · " + stateTip(p))
+                if p.state == 2
+                    float risk = math.abs(p.entry - p.stop)
+                    float r    = p.side * (p.exitPx - p.fill) / risk
+                    float net  = r - feePx(p.entry) / risk
+                    stN += 1
+                    stW += r > 0 ? 1 : 0
+                    stR += net
+                    if p.zone != ""
+                        stZN += 1
+                        stZR += net
+                    stCur := net < 0 ? stCur + 1 : 0
+                    if r < 0
+                        if na(lossDay) or lossDay != dayKey(time)
+                            lossDay := dayKey(time)
+                            lossN   := 0
+                        lossN += 1
+                    stMax := math.max(stMax, stCur)
+                    if showRes
+                        keepLabel(resLabels, label.new(bar_index, p.exitPx, frR(r, "+0.#;-0.#"), color = color(na), textcolor = readable(r > 0 ? C_BULL : C_BEAR), style = label.style_label_left, size = size.small), 40)
+                    if alExit
+                        alert(syminfo.ticker + " : plan clos, " + (r > 0 ? "objectif atteint, " : "stop touché, ") + frR(r, "+0.#;-0.#") + (r < 0 and lossN >= 2 ? ". Deuxième perte du jour : feu rouge, plus d'ordre aujourd'hui (leçon 18)." : ""), alert.freq_once_per_bar_close)
+                keepLine(planHist, p.lE, 60)
+                keepLine(planHist, p.lS, 60)
+                keepLine(planHist, p.lT, 60)
+                plans.remove(i)
+
+    // 3. Sweep à cette barre : la mèche dépasse le plus récent sommet intact (ou creux) et la clôture revient en deçà.
+    int nT = topBar.size()
+    if nT > 0
+        int   i0 = topBar.get(nT - 1)
+        float lv = topPx.get(nT - 1)
+        if i0 >= bar_index - 72 and high > lv and close < lv
+            bool   inTrend = dKnown and dDn
+            string zs      = inTrend and zoneOk ? zoneAt(-1) : ""
+            string named   = takenHi
+            if eqLines.size() > 0
+                for i = 0 to eqLines.size() - 1
+                    if eqSide.get(i) == 1 and high > eqLines.get(i).get_y1()
+                        named := addName(named, "Sommets égaux")
+                        break
+            string tip     = "Sweep du sommet " + px(lv) + (named != "" ? " (pris aussi : " + named + ")" : "") + (inTrend ? ", dans le sens" + zoneTxt(zs) : dKnown ? ", à contre-sens" : ", sens daily inconnu")
+            label  mk      = na
+            if showSw and (inTrend or not hideCtr)
+                if inTrend
+                    keepLine(swLines, line.new(i0, lv, bar_index, lv, color = color.new(C_LIQ, 30), style = line.style_dashed, width = 1), 30)
+                mk := mark(true, inTrend, tip)
+            swSellWith := inTrend
+            if inTrend and alSweep
+                alert(syminfo.ticker + " : BSL. " + tip, alert.freq_once_per_bar_close)
+            if inTrend and planOk and (not needZone or zs != "")
+                // Si la bougie d'avant ne peut plus devenir un creux, le plan est connu dès maintenant.
+                if low[1] < low and low[1] < low[2] and low[1] < low[3]
+                    pSell     := bar_index
+                    pSellTop  := i0
+                    pSellExt  := high
+                    pSellAtr  := atr
+                    pSellMk   := mk
+                    pSellTip  := tip
+                    pSellZone := zs
+                else
+                    Plan p = makePlan(-1, bar_index, i0, high, atr)
+                    if not na(p)
+                        addPlan(p, mk, tip, zs)
+                        planNew := true
+    int nB = botBar.size()
+    if nB > 0
+        int   i0 = botBar.get(nB - 1)
+        float lv = botPx.get(nB - 1)
+        if i0 >= bar_index - 72 and low < lv and close > lv
+            bool   inTrend = dKnown and dUp
+            string zs      = inTrend and zoneOk ? zoneAt(1) : ""
+            string named   = takenLo
+            if eqLines.size() > 0
+                for i = 0 to eqLines.size() - 1
+                    if eqSide.get(i) == -1 and low < eqLines.get(i).get_y1()
+                        named := addName(named, "Creux égaux")
+                        break
+            string tip     = "Sweep du creux " + px(lv) + (named != "" ? " (pris aussi : " + named + ")" : "") + (inTrend ? ", dans le sens" + zoneTxt(zs) : dKnown ? ", à contre-sens" : ", sens daily inconnu")
+            label  mk      = na
+            if showSw and (inTrend or not hideCtr)
+                if inTrend
+                    keepLine(swLines, line.new(i0, lv, bar_index, lv, color = color.new(C_LIQ, 30), style = line.style_dashed, width = 1), 30)
+                mk := mark(false, inTrend, tip)
+            swBuyWith := inTrend
+            if inTrend and alSweep
+                alert(syminfo.ticker + " : SSL. " + tip, alert.freq_once_per_bar_close)
+            if inTrend and planOk and (not needZone or zs != "")
+                // Si la bougie d'avant ne peut plus devenir un sommet, le plan est connu dès maintenant.
+                if high[1] > high and high[1] > high[2] and high[1] > high[3]
+                    pBuy     := bar_index
+                    pBuyBot  := i0
+                    pBuyExt  := low
+                    pBuyAtr  := atr
+                    pBuyMk   := mk
+                    pBuyTip  := tip
+                    pBuyZone := zs
+                else
+                    Plan p = makePlan(1, bar_index, i0, low, atr)
+                    if not na(p)
+                        addPlan(p, mk, tip, zs)
+                        planNew := true
+
+    // 4. Les swings que cette barre dépasse ne sont plus intacts ; ceux de plus de 72 barres sortent.
+    while topPx.size() > 0 and topPx.last() < high
+        topPx.pop()
+        topBar.pop()
+    while botPx.size() > 0 and botPx.last() > low
+        botPx.pop()
+        botBar.pop()
+    while topBar.size() > 0 and topBar.first() < bar_index - 72
+        topBar.shift()
+        topPx.shift()
+    while botBar.size() > 0 and botBar.first() < bar_index - 72
+        botBar.shift()
+        botPx.shift()
+
+    // 5. Nouveau sommet (ou creux) confirmé deux barres plus tôt ; égal au précédent intact, à la tolérance près.
+    if high[2] > high[3] and high[2] > high[4] and high[2] > high[1] and high[2] > high
+        if showEq and topPx.size() > 0 and topPx.last() - high[2] <= tolEq * atr
+            eqLines.push(line.new(topBar.last(), topPx.last(), bar_index, topPx.last(), color = C_LIQ, style = line.style_dotted, width = 1))
+            eqSide.push(1)
+        topBar.push(bar_index - 2)
+        topPx.push(high[2])
+    if low[2] < low[3] and low[2] < low[4] and low[2] < low[1] and low[2] < low
+        if showEq and botPx.size() > 0 and low[2] - botPx.last() <= tolEq * atr
+            eqLines.push(line.new(botBar.last(), botPx.last(), bar_index, botPx.last(), color = C_LIQ, style = line.style_dotted, width = 1))
+            eqSide.push(-1)
+        botBar.push(bar_index - 2)
+        botPx.push(low[2])
+
+    // 6. Les égaux avancent jusqu'à ce que le prix les prenne ; au-delà de six actifs, le plus ancien s'arrête.
+    if eqLines.size() > 0
+        for i = eqLines.size() - 1 to 0
+            line l = eqLines.get(i)
+            bool hit = eqSide.get(i) == 1 ? high > l.get_y1() : low < l.get_y1()
+            if hit or i < eqLines.size() - 6
+                l.set_color(color.new(C_LIQ, 65))
+                keepLine(eqHist, l, 40)
+                eqLines.remove(i)
+                eqSide.remove(i)
+            else
+                l.set_x2(bar_index)
+
+// ─── Structure : BOS et CHoCH ───────────────────────────────────────────────
+// Le dernier sommet (ou creux) de force N ; une clôture au-delà le casse. Dans le sens de la tendance : BOS.
+// Dans l'autre sens : CHoCH, et la tendance change.
+ph = ta.pivothigh(high, stLen, stLen)
+pl = ta.pivotlow(low, stLen, stLen)
+var float stH = na
+var int   stHx = na
+var float stL = na
+var int   stLx = na
+var int   stTrend = 0
+var array<line>  stLines  = array.new<line>()
+var array<label> stLabels = array.new<label>()
+bool bosUp = false
+bool bosDn = false
+
+if barstate.isconfirmed
+    if not na(ph)
+        stH  := ph
+        stHx := bar_index - stLen
+    if not na(pl)
+        stL  := pl
+        stLx := bar_index - stLen
+    if not na(stH) and close > stH
+        string kind = stTrend == -1 ? "CHoCH" : "BOS"
+        stTrend := 1
+        bosUp   := true
+        if showSt
+            keepLine(stLines, line.new(stHx, stH, bar_index, stH, color = color.new(C_BULL, 35), style = line.style_dotted, width = 1), 40)
+            keepLabel(stLabels, label.new(math.round((stHx + bar_index) / 2), stH, kind, color = color(na), textcolor = readable(color.new(C_BULL, 15)), style = label.style_label_down, size = size.tiny), 40)
+        stH := na
+    if not na(stL) and close < stL
+        string kind = stTrend == 1 ? "CHoCH" : "BOS"
+        stTrend := -1
+        bosDn   := true
+        if showSt
+            keepLine(stLines, line.new(stLx, stL, bar_index, stL, color = color.new(C_BEAR, 35), style = line.style_dotted, width = 1), 40)
+            keepLabel(stLabels, label.new(math.round((stLx + bar_index) / 2), stL, kind, color = color(na), textcolor = readable(color.new(C_BEAR, 15)), style = label.style_label_up, size = size.tiny), 40)
+        stL := na
+
+// ─── VWAP ───────────────────────────────────────────────────────────────────
+// Le prix moyen pondéré par les volumes depuis le début du jour (ou de la semaine), et ses écarts-types.
+vwNew = vwAnc == "Semaine" ? newWeek : newDay
+var float vV   = 0.0
+var float vPV  = 0.0
+var float vPV2 = 0.0
+if vwNew
+    vV   := 0.0
+    vPV  := 0.0
+    vPV2 := 0.0
+vV   += vol1
+vPV  += hlc3 * vol1
+vPV2 += hlc3 * hlc3 * vol1
+vw  = vPV / vV
+vsd = math.sqrt(math.max(vPV2 / vV - vw * vw, 0))
+// L'affichage ne dépend que des réglages (Pine l'exige) ; hors intraday, les valeurs sont vides.
+vOn  = showVw and intraday and not vwNew
+vBd  = vOn and vwBands
+D_PX = display.all - display.status_line
+D_VW = showVw ? D_PX : display.none
+D_VB = showVw and vwBands ? D_PX : display.none
+// Pas de trait à la barre du nouveau départ : la courbe repart sans relier la veille.
+plot(vOn ? vw : na, "VWAP", color.new(C_INK, 30), 1, plot.style_linebr, display = D_VW)
+plot(vBd ? vw + vsd : na, "VWAP +1", color.new(C_INK, 65), 1, plot.style_linebr, linestyle = plot.linestyle_dotted, display = D_VB)
+plot(vBd ? vw - vsd : na, "VWAP −1", color.new(C_INK, 65), 1, plot.style_linebr, linestyle = plot.linestyle_dotted, display = D_VB)
+plot(vBd ? vw + 2 * vsd : na, "VWAP +2", color.new(C_INK, 75), 1, plot.style_linebr, linestyle = plot.linestyle_dotted, display = D_VB)
+plot(vBd ? vw - 2 * vsd : na, "VWAP −2", color.new(C_INK, 75), 1, plot.style_linebr, linestyle = plot.linestyle_dotted, display = D_VB)
+
+// ─── Repères en bout de graphique ───────────────────────────────────────────
+// Chaque niveau encore vivant porte son nom à droite. Deux noms trop proches se partagent une étiquette,
+// sans se chevaucher ; la couleur est celle du plus important : plan, puis liquidité, puis ouvertures et chiffres ronds.
+var array<label>  endLabels = array.new<label>()
+var array<line>   rnLines   = array.new<line>()
+var array<float>  eY = array.new<float>()
+var array<string> eT = array.new<string>()
+var array<color>  eC = array.new<color>()
+var array<int>    eP = array.new<int>()
+
+// La cible de liquidité, le « draw on liquidity » de l'ICT : le niveau intact le plus proche dans le sens daily,
+// au-dessus du prix à l'achat, au-dessous à la vente.
+float  tgtY    = na
+string tgtName = ""
+
+closer(float y, float best, bool up) =>
+    not na(y) and (up ? y > close and (na(best) or y < best) : y < close and (na(best) or y > best))
+
+// Le prix d'un niveau encore intact, sinon rien.
+lvlY(line l, bool taken) =>
+    float y = na
+    if not taken and not na(l)
+        y := l.get_y1()
+    y
+
+// key : un nom essentiel, gardé en mode « Essentiels ».
+endItem(float y, string txt, color col, int prio, bool key) =>
+    if not na(y) and endMode != "Aucun" and (endMode == "Tous" or key)
+        eY.push(y)
+        eT.push(txt)
+        eC.push(col)
+        eP.push(prio)
+
+if barstate.islast
+    for l in endLabels
+        l.delete()
+    endLabels.clear()
+    for l in rnLines
+        l.delete()
+    rnLines.clear()
+    for l in pcLive
+        l.delete()
+    pcLive.clear()
+    eY.clear()
+    eT.clear()
+    eC.clear()
+    eP.clear()
+    if intraday
+        if not tDh and not na(lDh)
+            endItem(lDh.get_y1(), "Haut J-1", C_LIQ, 2, true)
+        if not tDl and not na(lDl)
+            endItem(lDl.get_y1(), "Bas J-1", C_LIQ, 2, true)
+        if not tWh and not na(lWh)
+            endItem(lWh.get_y1(), "Haut S-1", C_LIQ, 2, true)
+        if not tWl and not na(lWl)
+            endItem(lWl.get_y1(), "Bas S-1", C_LIQ, 2, true)
+        if not tMh and not na(lMh)
+            endItem(lMh.get_y1(), "Haut M-1", C_LIQ, 2, true)
+        if not tMl and not na(lMl)
+            endItem(lMl.get_y1(), "Bas M-1", C_LIQ, 2, true)
+        if not na(oD)
+            endItem(oD.get_y1(), "Ouverture du jour", color.new(C_INK, 30), 1, false)
+        if not na(oW)
+            endItem(oW.get_y1(), "Ouverture de la semaine", color.new(C_INK, 30), 1, false)
+        if hlLine.size() > 0
+            for i = 0 to hlLine.size() - 1
+                endItem(hlLine.get(i).get_y1(), hlName.get(i), C_LIQ, 2, true)
+    if eqLines.size() > 0
+        for i = 0 to eqLines.size() - 1
+            endItem(eqLines.get(i).get_y1(), eqSide.get(i) == 1 ? "Sommets égaux" : "Creux égaux", C_LIQ, 2, false)
+    if plans.size() > 0
+        Plan p = plans.last()
+        endItem(p.entry,  (p.side == 1 ? "Achat stop " : "Vente stop ") + px(p.entry), C_INK, 3, true)
+        endItem(p.stop,   "Stop " + px(p.stop), C_BEAR, 3, true)
+        endItem(p.target, "Objectif " + px(p.target), C_BULL, 3, true)
+
+    // Chiffres ronds : 50 pips sur le forex ; ailleurs, la puissance de 10 sous l'amplitude moyenne du jour,
+    // ou cinq fois plus si elle y tient plus de cinq fois.
+    float rng = tfSec > 86400 ? atr : adr
+    if showRound and not na(rng) and rng > 0
+        float e10 = math.pow(10, math.floor(math.log(rng) / math.log(10)))
+        float stp = stepMan > 0 ? stepMan : isFx ? 50 * pip : rng / e10 > 5 ? 5 * e10 : e10
+        float base = math.floor(close / stp) * stp
+        int   back = math.min(500, math.round(DAY / 1000 / tfSec))
+        for k = -1 to 2
+            float y = base + k * stp
+            rnLines.push(line.new(math.max(0, bar_index - back), y, bar_index + 1, y, color = color.new(C_INK, 82), width = 1, extend = extend.right))
+            endItem(y, px(y), color.new(C_INK, 45), 0, false)
+
+    // POC : ceux des séances finies, encore nus ; celui de la séance en cours, dans sa boîte.
+    if pcLine.size() > 0
+        for i = 0 to pcLine.size() - 1
+            endItem(pcLine.get(i).get_y1(), "POC " + pcSes.get(i), color.new(C_INK, 30), 1, false)
+    if intraday and showSes and showPoc
+        for k = 0 to 2
+            bool  act = k == 0 ? onA and inA : k == 1 ? onL and inL : onN and inN
+            box   b   = k == 0 ? bA : k == 1 ? bL : bN
+            if act and not na(b)
+                float y = pocOf(k == 0 ? vpA : k == 1 ? vpL : vpN, b.get_top(), b.get_bottom())
+                if not na(y)
+                    pcLive.push(line.new(b.get_left(), y, bar_index, y, color = color.new(C_INK, 30), width = 1))
+                    endItem(y, "POC " + (k == 0 ? "Asie" : k == 1 ? "Londres" : "New York"), color.new(C_INK, 30), 1, false)
+
+    // La cible : parmi les hauts (à l'achat) ou les bas (à la vente) encore intacts, le plus proche du prix.
+    if dKnown and (dUp or dDn)
+        bool up = dUp
+        if intraday
+            float y1 = up ? lvlY(lDh, tDh) : lvlY(lDl, tDl)
+            if closer(y1, tgtY, up)
+                tgtY    := y1
+                tgtName := up ? "Haut J-1" : "Bas J-1"
+            float y2 = up ? lvlY(lWh, tWh) : lvlY(lWl, tWl)
+            if closer(y2, tgtY, up)
+                tgtY    := y2
+                tgtName := up ? "Haut S-1" : "Bas S-1"
+            float y3 = up ? lvlY(lMh, tMh) : lvlY(lMl, tMl)
+            if closer(y3, tgtY, up)
+                tgtY    := y3
+                tgtName := up ? "Haut M-1" : "Bas M-1"
+            if hlLine.size() > 0
+                for i = 0 to hlLine.size() - 1
+                    if hlSide.get(i) == (up ? 1 : -1) and closer(hlLine.get(i).get_y1(), tgtY, up)
+                        tgtY    := hlLine.get(i).get_y1()
+                        tgtName := hlName.get(i)
+        if eqLines.size() > 0
+            for i = 0 to eqLines.size() - 1
+                if eqSide.get(i) == (up ? 1 : -1) and closer(eqLines.get(i).get_y1(), tgtY, up)
+                    tgtY    := eqLines.get(i).get_y1()
+                    tgtName := up ? "Sommets égaux" : "Creux égaux"
+        float sw = na
+        if up and topPx.size() > 0
+            sw := topPx.last()
+        if not up and botPx.size() > 0
+            sw := botPx.last()
+        if closer(sw, tgtY, up)
+            tgtY    := sw
+            tgtName := up ? "Dernier sommet" : "Dernier creux"
+    // Son nom, à droite, commence par « Cible ».
+    if not na(tgtY)
+        bool found = false
+        if eY.size() > 0
+            for i = 0 to eY.size() - 1
+                if not found and eY.get(i) == tgtY and eT.get(i) == tgtName
+                    eT.set(i, "Cible · " + tgtName)
+                    found := true
+        if not found
+            endItem(tgtY, "Cible · " + tgtName, C_LIQ, 2, true)
+
+    if eY.size() > 0
+        array<int> idx = eY.sort_indices(order.ascending)
+        float gap = na(atr) ? 0.0 : 0.35 * atr
+        int i = 0
+        while i < idx.size()
+            int    k   = idx.get(i)
+            string txt = eT.get(k)
+            color  col = eC.get(k)
+            int    pr  = eP.get(k)
+            float  y   = eY.get(k)
+            int    j   = i + 1
+            while j < idx.size()
+                int kj = idx.get(j)
+                if eY.get(kj) - eY.get(idx.get(j - 1)) > gap
+                    break
+                txt := eT.get(kj) + " · " + txt
+                if eP.get(kj) > pr
+                    pr  := eP.get(kj)
+                    col := eC.get(kj)
+                    y   := eY.get(kj)
+                j += 1
+            endLabels.push(label.new(bar_index + 2, y, txt, color = color(na), textcolor = readable(col), style = label.style_label_left, size = size.small))
+            i := j
+
+// ─── Tableau ────────────────────────────────────────────────────────────────
+tPos = switch tablePos
+    "En haut à droite" => position.top_right
+    "En haut à gauche" => position.top_left
+    "En bas à gauche"  => position.bottom_left
+    =>                    position.bottom_right
+
+var table tb = table.new(tPos, 2, 18, bgcolor = color.new(chart.bg_color, 8))
+
+// En haut, une ligne vide sert de marge : TradingView pose ses propres icônes dans les coins hauts du graphique.
+tTop = tablePos == "En haut à droite" or tablePos == "En haut à gauche"
+C_MUTED = color.new(chart.fg_color, 35)
+
+T_SIZE = tSize == "Petit" ? size.small : size.normal
+
+row(int r, string k, string v, color vc) =>
+    tb.cell(0, r, k, text_color = C_MUTED, text_size = T_SIZE, text_halign = text.align_left)
+    tb.cell(1, r, v, text_color = readable(vc), text_size = T_SIZE, text_halign = text.align_right)
+
+// En direct, l'heure courante ; au Replay ou marché fermé, la clôture de la dernière bougie.
+nowT = math.min(timenow, time_close)
+
+if barstate.islast and showTable
+    tb.clear(0, 0, 1, 17)
+    int r = 0
+    if tTop
+        tb.cell(0, 0, "", height = 4)
+        tb.cell(1, 0, "", height = 4)
+        r := 1
+    string sens   = not dKnown ? "n/d" : dUp ? "Achats · au-dessus de l'EMA 200" : dDn ? "Ventes · sous l'EMA 200" : "n/d"
+    color  sensC  = dKnown and dUp ? C_BULL : dKnown and dDn ? C_BEAR : C_MUTED
+    string cible  = na(tgtY) ? (dKnown ? "Aucune" : "n/d") : tgtName + " " + px(tgtY) + " · " + (isFx ? fr(math.abs(tgtY - close) / pip, "0") + " pips" : fr(math.abs(tgtY - close) / close * 100, "0.00") + " %")
+    color  cibleC = na(tgtY) ? C_MUTED : C_LIQ
+    // Le feu rouge : les pertes des plans d'aujourd'hui, journée de Paris. À deux, on s'arrête (leçon 18).
+    int    lossT  = lossDay == dayKey(nowT) ? lossN : 0
+    string feu    = str.tostring(lossT) + " pertes aujourd'hui : on s'arrête"
+    if tComp
+        // Compact : le sens, la cible, le feu rouge s'il s'allume, l'ordre et sa taille.
+        row(r, "Sens daily", sens, sensC)
+        row(r + 1, "Cible de liquidité", cible, cibleC)
+        r += 2
+        if lossT >= 2
+            row(r, "Feu rouge", feu, C_BEAR)
+            r += 1
+        if not planOk and showPlan
+            row(r, "Plans", "en H1 seulement", C_MUTED)
+        else if planOk
+            if plans.size() > 0
+                Plan p = plans.last()
+                row(r, p.state == 1 ? "En cours" : "Ordre · " + hm(p.place, nowT), (p.side == 1 ? "Achat stop " : "Vente stop ") + px(p.entry), p.side == 1 ? C_BULL : C_BEAR)
+                row(r + 1, "Taille à " + fr(riskPct, "0.#") + " %", sizeTxt(math.abs(p.entry - p.stop)), chart.fg_color)
+            else
+                row(r, "Ordre", "Aucun", C_MUTED)
+    else
+        if tCtx
+            row(r, "Sens daily", sens, sensC)
+            row(r + 1, "Cible de liquidité", cible, cibleC)
+            r += 2
+            string trd = (tfSec <= 604800 ? "W " + arrow(wUp, wDn) : "W n/d") + (intraday and tfSec <= 14400 ? " · H4 " + arrow(h4Up, h4Dn) : "") + (intraday and tfSec <= 3600 ? " · H1 " + arrow(h1Up, h1Dn) : "")
+            row(r, "Tendance", trd, chart.fg_color)
+            r += 1
+            if intraday
+                string ses = (onA and inA ? "Asie" : "") + (onL and inL ? (onA and inA ? " et Londres" : "Londres") : "") + (onN and inN ? ((onA and inA) or (onL and inL) ? " et New York" : "New York") : "")
+                row(r, "Séance", ses == "" ? "Hors séance" : ses, chart.fg_color)
+                r += 1
+                if not na(adr) and adr > 0
+                    row(r, "Amplitude du jour", fr(100 * (dHi - dLo) / adr, "0") + " % de la moyenne", chart.fg_color)
+                    r += 1
+            row(r, "Prochain passage", hm(nextRoutine(nowT), nowT), chart.fg_color)
+            r += 1
+        if tPln
+            if planOk and lossT >= 1
+                row(r, lossT >= 2 ? "Feu rouge" : "Pertes du jour", lossT >= 2 ? feu : "1 sur 2", lossT >= 2 ? C_BEAR : C_MUTED)
+                r += 1
+            if not planOk and showPlan
+                row(r, "Plans", "en H1 seulement", C_MUTED)
+                r += 1
+            else if planOk
+                if plans.size() > 0
+                    Plan p = plans.last()
+                    float dist = math.abs(p.entry - p.stop)
+                    string what = (p.side == 1 ? "Achat stop " : "Vente stop ") + px(p.entry)
+                    row(r, p.state == 1 ? "En cours" : "Ordre · " + hm(p.place, nowT), what, p.side == 1 ? C_BULL : C_BEAR)
+                    row(r + 1, "Stop · objectif", px(p.stop) + " · " + px(p.target), chart.fg_color)
+                    row(r + 2, "Risque", (isFx ? fr(dist / pip, "0") + " pips" : fr(dist / p.entry * 100, "0.00") + " %") + " · frais " + fr(feePx(p.entry) / dist, "0.00") + "R", chart.fg_color)
+                    row(r + 3, "Taille à " + fr(riskPct, "0.#") + " %", sizeTxt(dist), chart.fg_color)
+                    row(r + 4, "Zone H4", p.zone == "FVG" ? "Sur un FVG" : p.zone == "OB" ? "Sur un order block" : "Aucun OB ni FVG", p.zone == "" ? C_MUTED : chart.fg_color)
+                    r += 5
+                else
+                    row(r, "Ordre", "Aucun", C_MUTED)
+                    r += 1
+        if tHist and planOk
+            if stN == 0
+                row(r, "Bilan", "Aucun plan exécuté", C_MUTED)
+            else
+                row(r, "Bilan net", str.tostring(stN) + " trades · " + fr(100.0 * stW / stN, "0") + " % · " + avgR(stR / stN) + " par trade", chart.fg_color)
+                r += 1
+                if not needZone
+                    row(r, "Sur zone H4", stZN == 0 ? "Aucun" : str.tostring(stZN) + " trades · " + avgR(stZR / stZN) + " par trade", stZN == 0 ? C_MUTED : chart.fg_color)
+                    r += 1
+                row(r, "Pire série", stMax == 0 ? "Aucune perte" : stMax == 1 ? "1 perte" : str.tostring(stMax) + " pertes de suite", chart.fg_color)
+
+// ─── Alertes ────────────────────────────────────────────────────────────────
+// Le détail (plan prêt, exécuté, clos, niveau pris, zone touchée) part par « Toute fonction alert() », selon les choix
+// du groupe 9 ; les conditions ci-dessous se choisissent une par une dans la liste.
+alertcondition(planNew,    "Nouveau plan de trade",           "{{ticker}} : un plan de la stratégie d'école est prêt")
+alertcondition(swBuyWith,  "Sweep d'achat dans le sens",      "{{ticker}} : mèche sous le dernier creux, clôture au-dessus, dans le sens de l'EMA 200 daily")
+alertcondition(swSellWith, "Sweep de vente dans le sens",     "{{ticker}} : mèche au-dessus du dernier sommet, clôture en dessous, dans le sens de l'EMA 200 daily")
+alertcondition(zoneTouch,  "Zone H4 touchée dans le sens",    "{{ticker}} : le prix touche un order block ou un FVG H4, dans le sens de l'EMA 200 daily")
+alertcondition(takeDay,    "Haut ou bas d'hier pris",         "{{ticker}} : le prix va chercher le haut ou le bas d'hier")
+alertcondition(takeWeek,   "Haut ou bas de la semaine passée pris", "{{ticker}} : le prix va chercher le haut ou le bas de la semaine passée")
+alertcondition(takeSes,    "Haut ou bas d'une séance pris",   "{{ticker}} : le prix va chercher le haut ou le bas d'une séance")
+alertcondition(bosUp or bosDn, "Cassure de structure",        "{{ticker}} : BOS ou CHoCH")
