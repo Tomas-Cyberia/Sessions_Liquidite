@@ -1,3 +1,5 @@
+<img src="https://raw.githubusercontent.com/Tomas-Cyberia/Sessions_Liquidite/main/banniere.jpg" alt="Sessions · Liquidité : le court terme, en intraday" width="100%">
+
 # Sessions · Liquidité
 
 Version 1.0 · [journal des versions](#versions)
