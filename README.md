@@ -16,7 +16,7 @@ Version 1.0 · [le guide complet](GUIDE.md) · [les versions](#versions)
 - **La liquidité** : les hauts et bas d'hier, de la semaine, du mois et des séances, les sommets et creux égaux, les chiffres ronds, et la **cible de liquidité**.
 - **Les zones H4** : FVG et order blocks.
 - **Les sweeps BSL et SSL**, et en H1 les **plans** de la stratégie d'école, avec leur taille de position.
-- **Le tableau** : le contexte, le plan en cours, le bilan des plans passés et le feu rouge.
+- **Le tableau** : le contexte du jour, et à cocher le plan en cours, le feu rouge et le bilan des plans passés.
 - **En option** : la structure (BOS, CHoCH), le VWAP, le range d'ouverture et les ouvertures du jour et de la semaine.
 
 ## Installation
@@ -51,11 +51,11 @@ Le survol d'un BSL ou d'un SSL dit quels niveaux la mèche a pris aussi, si elle
 
 ## Le tableau
 
-En bas à droite, sous EMA · RSI, en trois parties qui s'allument une par une :
+En bas à droite, sous EMA · RSI, en trois parties qui se cochent une par une dans le groupe 8 :
 
-- **Contexte** : le sens du daily, la cible de liquidité et sa distance, la tendance en weekly, H4 et H1, la séance, l'amplitude du jour et le prochain passage de la routine.
-- **Plan** : le feu rouge après deux pertes dans la journée (leçon 18), l'ordre, le stop, l'objectif, le risque et ses frais, la taille de position et la zone H4.
-- **Bilan** : les plans exécutés sur ce graphique, frais compris, et la pire série de pertes.
+- **Contexte**, affiché par défaut : le sens du daily, la cible de liquidité et sa distance, la tendance en weekly, H4 et H1, la séance, l'amplitude du jour et le prochain passage de la routine.
+- **Plan**, à cocher : le feu rouge après deux pertes dans la journée (leçon 18), l'ordre, le stop, l'objectif, le risque et ses frais, la taille de position et la zone H4.
+- **Bilan**, à cocher : les plans exécutés sur ce graphique, frais compris, et la pire série de pertes.
 
 **Compact** ne garde que l'essentiel ; **Texte** le passe en petit.
 
@@ -85,7 +85,7 @@ Rejouée sur deux à trois ans de données horaires, avec les règles exactes de
 | Forex, sur zone H4 | 471 | +0,04R | ±0,13R |
 | Or, crypto et indices, sur zone H4 | 310 | +0,09R | ±0,16R |
 
-Tous les résultats restent dans la marge du hasard, avec ou sans la zone H4 : **l'indicateur montre des setups, pas un avantage.** Il sert à apprendre l'exécution, au Replay comme en démo, et son bilan rejoue les mêmes règles sur ton propre graphique. Le détail, marché par marché et année par année : [`test/Résultats.md`](test/Résultats.md).
+Tous les résultats restent dans la marge du hasard, avec ou sans la zone H4 : **l'indicateur montre des setups, pas un avantage.** Il sert à apprendre l'exécution, au Replay comme en démo, et son bilan, à cocher dans le tableau, rejoue les mêmes règles sur ton propre graphique. Le détail, marché par marché et année par année : [`test/Résultats.md`](test/Résultats.md).
 
 ## Les alertes
 
@@ -110,7 +110,8 @@ Les réglages par défaut suivent la leçon 16. À changer seulement si besoin :
 | Frais par trade | 5 · Stratégie d'école | Pour que le bilan compte tes frais |
 | Capital, devise, risque, taille d'un lot | 6 · Taille de position | Pour que la taille affichée soit la tienne |
 | VWAP | 7 · VWAP | Sur les indices et la crypto |
-| Contexte, plan, bilan, compact, texte | 8 · Tableau | Pour alléger le tableau, sur un petit écran surtout |
+| Plan, bilan | 8 · Tableau | Pour suivre le plan en cours, le feu rouge et le bilan des plans passés |
+| Compact, texte | 8 · Tableau | Pour alléger le tableau, sur un petit écran surtout |
 
 ## Bon à savoir
 

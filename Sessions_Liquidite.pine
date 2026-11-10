@@ -106,8 +106,8 @@ GT = "8 · Tableau"
 showTable = input.bool(true, "Afficher", inline = "t1", group = GT, display = display.none)
 tablePos  = input.string("En bas à droite", "", options = ["En bas à droite", "En haut à droite", "En haut à gauche", "En bas à gauche"], inline = "t1", group = GT, tooltip = "En bas à droite par défaut : EMA · RSI occupe le haut.", display = display.none)
 tCtx  = input.bool(true, "Contexte", inline = "t2", group = GT, display = display.none)
-tPln  = input.bool(true, "Plan", inline = "t2", group = GT, display = display.none)
-tHist = input.bool(true, "Bilan", inline = "t2", group = GT, tooltip = "Contexte : sens, tendance, séance, amplitude du jour, prochain passage. Plan : le dernier plan ouvert et sa taille. Bilan : les plans passés de ce graphique, frais compris.", display = display.none)
+tPln  = input.bool(false, "Plan", inline = "t2", group = GT, display = display.none)
+tHist = input.bool(false, "Bilan", inline = "t2", group = GT, tooltip = "Contexte, seul affiché par défaut : sens, tendance, séance, amplitude du jour, prochain passage. Plan : le dernier plan ouvert, sa taille et le feu rouge. Bilan : les plans passés de ce graphique, frais compris.", display = display.none)
 tSize = input.string("Normal", "Texte", options = ["Normal", "Petit"], inline = "t3", group = GT, display = display.none)
 tComp = input.bool(false, "Compact", inline = "t3", group = GT, tooltip = "Compact : le sens, la cible de liquidité, l'ordre et sa taille, et le feu rouge s'il s'allume. Pratique sur un petit écran.", display = display.none)
 

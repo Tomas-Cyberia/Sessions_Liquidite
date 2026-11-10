@@ -21,7 +21,7 @@ Le numéro de version est dans le nom de l'indicateur, en haut à gauche du grap
 | Sommets et creux égaux, chiffres ronds | Structure : BOS et CHoCH |
 | Zones H4 : FVG et order blocks | VWAP et ses bandes |
 | Sweeps (BSL, SSL) et plans de la stratégie d'école | |
-| Tableau, avec la cible de liquidité | |
+| Tableau : le contexte, avec la cible de liquidité | Tableau : le plan en cours et le bilan |
 
 Une couleur, un rôle : l'**ambre** pour la liquidité ; le **vert** et le **rouge** pour le sens, dans les zones, les sweeps et les plans ; l'**encre** pour les repères, comme l'ordre, le POC, les ouvertures, les chiffres ronds et le VWAP ; la **teinte des séances** pour le temps.
 
@@ -100,7 +100,7 @@ Un plan vit comme dans le test du parcours :
 
 Sans voir dans la bougie, deux cas restent approchés, comme dans le test : la bougie qui contient l'heure de pose (de 12 h à 13 h, de 18 h à 19 h) compte comme après la pose, et une bougie qui touche l'entrée et le stop compte comme annulée.
 
-Un plan clos pâlit, et un plan exécuté affiche son résultat, sans les frais. Le dernier plan ouvert porte ses prix à droite du graphique et remplit le tableau.
+Un plan clos pâlit, et un plan exécuté affiche son résultat, sans les frais. Le dernier plan ouvert porte ses prix à droite du graphique, et remplit la partie Plan du tableau quand elle est cochée.
 
 **La zone H4 (condition 2)** : chaque plan dit si sa mèche touche un FVG ou un order block H4 encore vivant, sans que sa clôture le traverse. Un support, lui, reste à juger à l'œil. Avec **Exiger une zone H4**, les sweeps hors zone n'ont plus de plan.
 
@@ -126,7 +126,9 @@ Taille = capital × risque ÷ (distance du stop × valeur d'un point), convertie
 
 ## 8 · Le tableau
 
-Il se place en bas à droite par défaut, parce qu'EMA · RSI occupe le haut. Ses trois parties s'allument une par une, dans le groupe 8. Deux réglages l'allègent : **Texte**, en petit, et **Compact**, qui ne garde que le sens, la cible de liquidité, le feu rouge s'il s'allume, l'ordre et sa taille.
+Il se place en bas à droite par défaut, parce qu'EMA · RSI occupe le haut. Ses trois parties se cochent une par une, dans le groupe 8 : par défaut, seul le **Contexte** s'affiche, sans le **Plan** ni le **Bilan**. Deux réglages l'allègent : **Texte**, en petit, et **Compact**, qui ne garde que le sens, la cible de liquidité, le feu rouge s'il s'allume, l'ordre et sa taille.
+
+Les six premières lignes forment le Contexte ; de « Pertes du jour » à « Zone H4 », c'est le Plan ; les trois dernières, le Bilan.
 
 | Ligne | Ce qu'elle dit |
 |---|---|
@@ -154,7 +156,7 @@ La stratégie a été rejouée sur l'or, la crypto et les indices avec les règl
 
 Avec la condition 2 en plus, telle que l'indicateur la vérifie, 71 % des sweeps du forex touchent une zone H4. Ces trades font +0,04R par trade sur le forex (471 trades, marge ±0,13R), et +0,09R sur l'or, la crypto et les indices (310 trades, marge ±0,16R). La zone H4 ne change rien de mesurable : les deux résultats restent dans la marge du hasard, comme sans elle.
 
-Rien ne se distingue donc nettement de l'équilibre : l'indicateur montre des setups, pas un avantage. Le tableau complet, année par année, est dans `test/Résultats.md`. Le bilan du tableau rejoue les mêmes règles sur ton graphique : c'est le moyen de voir ce que la stratégie donne sur ton actif.
+Rien ne se distingue donc nettement de l'équilibre : l'indicateur montre des setups, pas un avantage. Le tableau complet, année par année, est dans `test/Résultats.md`. Le bilan du tableau, à cocher dans le groupe 8, rejoue les mêmes règles sur ton graphique : c'est le moyen de voir ce que la stratégie donne sur ton actif.
 
 Pour rejouer le test : `node test_actifs.js` dans le dossier `test`. Il réécrit `Résultats.md` et `resultats.json`. Les données horaires de Yahoo, dans `test/data`, ne sont pas publiées sur GitHub : le script et ses résultats le sont.
 
