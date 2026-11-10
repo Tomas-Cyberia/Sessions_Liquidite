@@ -2,7 +2,7 @@
 
 # Sessions · Liquidité
 
-**Le court terme, en intraday.** Les séances, la liquidité au sens ICT et SMC, les zones H4 et les plans de la stratégie d'école de L'initiation, dans un seul indicateur TradingView. Pour le forex, l'or, la crypto et les indices.
+**Le court terme, en intraday.** Les séances, la liquidité au sens ICT et SMC, les zones H4 et les plans de la stratégie d'école de Cyberia, dans un seul indicateur TradingView, pour le forex, l'or, la crypto et les indices.
 
 Version 1.0 · [le guide complet](GUIDE.md) · [les versions](#versions)
 
@@ -16,7 +16,7 @@ Version 1.0 · [le guide complet](GUIDE.md) · [les versions](#versions)
 - **La liquidité** : les hauts et bas d'hier, de la semaine, du mois et des séances, les sommets et creux égaux, les chiffres ronds, et la **cible de liquidité**.
 - **Les zones H4** : FVG et order blocks.
 - **Les sweeps BSL et SSL**, et en H1 les **plans** de la stratégie d'école, avec leur taille de position.
-- **Le tableau** : le contexte du jour, et à cocher le plan en cours, le feu rouge et le bilan des plans passés.
+- **Le tableau** : le contexte du jour ; en option, le plan en cours, le feu rouge et le bilan des plans passés.
 - **En option** : la structure (BOS, CHoCH), le VWAP, le range d'ouverture et les ouvertures du jour et de la semaine.
 
 ## Installation
@@ -37,7 +37,7 @@ Une couleur, un rôle : l'**ambre** pour la liquidité, le **vert** et le **roug
 | Trait d'encre, « POC Londres » | Le prix où la séance a échangé le plus de volume ; il avance tant que le prix n'est pas repassé dessus |
 | Trait ambre fin, « Haut Asie » | Le haut ou le bas d'une séance finie |
 | Tirets ambre, « Haut J-1 », « Bas S-1 » | Le haut et le bas d'hier (1 px), de la semaine passée (2 px), du mois passé (3 px) |
-| Pointillés ambre, « Sommets égaux » | Deux sommets au même niveau : des stops ont toutes les chances d'y dormir |
+| Pointillés ambre, « Sommets égaux » | Deux sommets, ou deux creux, au même niveau : l'ICT y suppose des stops |
 | Trait très pâle, avec son prix | Un chiffre rond proche du prix |
 | « Cible · Haut Asie » | La cible de liquidité : le niveau intact le plus proche dans le sens du daily |
 | Une ligne qui s'arrête et pâlit | Le prix est allé chercher le niveau |
@@ -57,11 +57,11 @@ En bas à droite, sous EMA · RSI, en trois parties qui se cochent une par une d
 - **Plan**, à cocher : le feu rouge après deux pertes dans la journée (leçon 18), l'ordre, le stop, l'objectif, le risque et ses frais, la taille de position et la zone H4.
 - **Bilan**, à cocher : les plans exécutés sur ce graphique, frais compris, et la pire série de pertes.
 
-**Compact** ne garde que l'essentiel ; **Texte** le passe en petit.
+Deux réglages l'allègent : **Compact**, qui ne garde que l'essentiel, et **Texte**, qui le passe en petit.
 
 ## La stratégie d'école
 
-Les six conditions de la leçon 16, en H1, à l'achat :
+Les six conditions de la leçon 16 de L'initiation, le parcours de trading de Cyberia, en H1 et à l'achat :
 
 1. Daily au-dessus de l'EMA 200.
 2. Le prix sur une zone H4 : support, OB, FVG.
@@ -76,7 +76,7 @@ L'ordre se pose au passage suivant de la routine : 8 h, 12 h 30 ou 18 h 30, heur
 
 ## Ce que disent les tests
 
-Rejouée sur deux à trois ans de données horaires, avec les règles exactes de la leçon :
+La stratégie a été rejouée sur deux à trois ans de données horaires, avec les règles exactes de la leçon :
 
 | Marché | Trades | Par trade | Marge du hasard |
 |---|---|---|---|
@@ -85,7 +85,7 @@ Rejouée sur deux à trois ans de données horaires, avec les règles exactes de
 | Forex, sur zone H4 | 471 | +0,04R | ±0,13R |
 | Or, crypto et indices, sur zone H4 | 310 | +0,09R | ±0,16R |
 
-Tous les résultats restent dans la marge du hasard, avec ou sans la zone H4 : **l'indicateur montre des setups, pas un avantage.** Il sert à apprendre l'exécution, au Replay comme en démo, et son bilan, à cocher dans le tableau, rejoue les mêmes règles sur ton propre graphique. Le détail, marché par marché et année par année : [`test/Résultats.md`](test/Résultats.md).
+Tous les résultats restent dans la marge du hasard, avec ou sans la zone H4 : **l'indicateur montre des setups, pas un avantage.** Il sert à apprendre l'exécution, au Replay comme en démo. Son bilan, à cocher dans le tableau, rejoue les mêmes règles sur ton propre graphique. Le détail, marché par marché et année par année : [`test/Résultats.md`](test/Résultats.md).
 
 ## Les alertes
 
@@ -103,7 +103,7 @@ Les réglages par défaut suivent la leçon 16. À changer seulement si besoin :
 | Thème | Apparence | Le même que dans EMA · RSI |
 | Noms à droite | Apparence | Essentiels par défaut ; Tous pour chaque niveau, Aucun pour un graphique nu |
 | Heures des séances, range d'ouverture | 1 · Séances | Toujours en heure de Paris |
-| Ouvertures, pas des chiffres ronds | 2 · Liquidité | Pour ajouter des niveaux |
+| Ouvertures, écart des chiffres ronds | 2 · Liquidité | Pour ajouter des niveaux, ou fixer toi-même l'écart des chiffres ronds |
 | Zones affichées de chaque côté | 3 · Zones H4 | Deux par défaut ; toutes comptent pour la condition 2 |
 | Cassures de structure | 4 · Structure | Pour voir les BOS et les CHoCH de la leçon 05 |
 | Exiger une zone H4 | 5 · Stratégie d'école | Pour ne garder que les plans sur un OB ou un FVG |
@@ -115,7 +115,7 @@ Les réglages par défaut suivent la leçon 16. À changer seulement si besoin :
 
 ## Bon à savoir
 
-- **Rien ne repeint** : tout se calcule à la clôture, et ce qui vient du daily, du weekly ou du H4 est pris à la clôture de leur bougie précédente.
+- **Rien ne repeint** : tout se calcule à la clôture, et ce qui vient du daily, du weekly ou du H4 est pris à la clôture de la bougie précédente.
 - **Au Replay**, l'indicateur avance bougie par bougie comme en direct : plans, zones et bilan se construisent au fil de la lecture.
 - **Des plans en H1 seulement**, par défaut : c'est l'unité de temps de la leçon et du test. Ailleurs, les sweeps restent affichés, sans plan.
 - **Des bougies classiques** : en Heikin Ashi, les prix sont recalculés, et les plans comme le bilan ne veulent plus rien dire.
